@@ -31,8 +31,8 @@ _MESSAGES = {
             "(https://open.spotify.com/track/...)\n\n"
             "y lo separaré en:\n"
             "\u2022 {stem}\n"
-            "\u2022 el resto (la mezcla sin {stem})\n"
-            "\u2022 {stem} resaltada ({stem} al 100%, el resto al 50%)\n\n"
+            "\u2022 todo lo demas (la mezcla sin {stem})\n"
+            "\u2022 {stem} resaltada ({stem} al 100%, todo lo demas al 50%)\n\n"
             "Los archivos subidos deben pesar menos de 20 MB; los enlaces de "
             "Spotify no tienen ese límite."
         ),
@@ -105,7 +105,7 @@ _MESSAGES = {
     },
     "title_everything": {
         "en": "Everything else",
-        "es": "El resto",
+        "es": "Todo lo demas",
     },
     "title_emphasis": {
         "en": "{stem_cap} emphasized",

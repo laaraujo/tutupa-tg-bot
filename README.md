@@ -2,11 +2,11 @@
 
 A Telegram bot that splits audio into stems using the fine-tuned
 [Demucs](https://github.com/facebookresearch/demucs) model (`htdemucs_ft`). For
-each track it returns three lossless FLAC files:
+each track it returns three MP3 files:
 
 - **drums** (the isolated percussion)
 - **everything else** (the mix with drums removed)
-- **drums emphasized** (drums at 70%, everything else at 30%)
+- **drums emphasized** (drums at 100%, everything else at 50%)
 
 It runs entirely on your machine. Demucs uses the GPU (RTX 3090) inside a Docker
 container. Because the bot talks to Telegram via outbound long-polling, there is
@@ -21,6 +21,7 @@ no inbound networking to configure (no port forwarding, no tunnels).
 ├── requirements.txt
 ├── .env              # your bot token (not committed)
 ├── cache/            # Demucs model weights (persisted)
+├── botmeta/          # version-controlled bot profile texts + apply script
 └── src/              # all Python code
     ├── bot.py        # Telegram bot
     ├── separate.py   # Demucs + ffmpeg mixing
@@ -82,6 +83,23 @@ docker compose down         # stop
   (much slower).
 - **One at a time:** the bot processes a single track at a time and queues the
   rest, so concurrent requests don't fight over the GPU.
+
+## Bot profile texts (descriptions)
+
+The bot's localized profile texts live in `botmeta/` so they're version
+controlled:
+
+- `description.<lang>.txt` -> the empty-chat description (`setMyDescription`)
+- `short_description.<lang>.txt` -> the contact-card "about" (`setMyShortDescription`)
+
+`en` is sent as the default (fallback for every locale); any other language code
+(e.g. `es`) is applied to that specific locale. To push changes to Telegram:
+
+```bash
+./botmeta/apply.sh
+```
+
+It reads `TELEGRAM_BOT_TOKEN` from `.env`.
 
 ## Verify the GPU is visible to the container
 

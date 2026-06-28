@@ -1,0 +1,10 @@
+🥁 Separá la percusión de cualquier canción.
+
+Enviame un enlace de Spotify o un archivo de audio y te devuelvo tres pistas:
+• 🥁 Solo la batería
+• 🎶 Todo lo demás (la mezcla sin batería)
+• 🔊 Batería resaltada (batería al 100% de volumen, el resto al 50%)
+
+Ideal para practicar, hacer covers, sacar canciones de oído o crear bases.
+
+Disponible en español e inglés. ¡Mandame una canción y probá!

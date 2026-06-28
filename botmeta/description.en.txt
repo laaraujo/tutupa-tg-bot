@@ -1,0 +1,10 @@
+🥁 Isolate the drums from any song.
+
+Send me a Spotify link or an audio file and I'll send back three tracks:
+• 🥁 Drums only
+• 🎶 Drumless (the mix without drums)
+• 🔊 Emphasized drums (drums at 100% volume, everything else at 50%)
+
+Great for practicing, making covers, learning songs by ear, or building backing tracks.
+
+Available in English and Spanish. Send me a song and give it a try!

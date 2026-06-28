@@ -24,6 +24,7 @@ from telegram.ext import (
 
 from separate import FMT, STEM, SeparationError, mix_emphasis, separate
 from spotify_dl import DownloadError, download_track, find_track_url
+from i18n import resolve_lang, stem_label, t
 
 load_dotenv()
 
@@ -42,20 +43,18 @@ logger = logging.getLogger("drumsplit-tg-bot")
 # Only one separation at a time so concurrent requests don't fight over the GPU.
 job_lock = asyncio.Lock()
 
-HELP_TEXT = (
-    "Send me either:\n"
-    "\u2022 an audio file (mp3, m4a, wav, ...), or\n"
-    "\u2022 a Spotify track link (https://open.spotify.com/track/...)\n\n"
-    "and I'll split it into two tracks:\n"
-    f"\u2022 {STEM}\n"
-    f"\u2022 everything else (the mix with {STEM} removed)\n\n"
-    "Processing runs on a local GPU. Uploaded files must be under 20 MB "
-    "(Telegram's bot download limit); Spotify links have no such limit."
-)
+
+def _lang(update: Update) -> str:
+    user = update.effective_user
+    return resolve_lang(user.language_code if user else None)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(HELP_TEXT)
+    lang = _lang(update)
+    stem = stem_label(lang, STEM)
+    await update.message.reply_text(
+        t(lang, "help", stem=stem, stem_cap=stem.capitalize())
+    )
 
 
 def _pick_audio(message):
@@ -70,13 +69,18 @@ def _pick_audio(message):
     return None
 
 
-async def _separate_and_send(message, status, input_path: str, workdir: Path) -> None:
-    """Run separation on ``input_path`` and reply with both resulting tracks."""
+async def _separate_and_send(
+    message, status, input_path: str, workdir: Path, lang: str
+) -> None:
+    """Run separation on ``input_path`` and reply with the resulting tracks."""
+    stem = stem_label(lang, STEM)
+    tx = {"stem": stem, "stem_cap": stem.capitalize()}
+
     if job_lock.locked():
-        await status.edit_text("Queued - another track is processing...")
+        await status.edit_text(t(lang, "queued"))
 
     async with job_lock:
-        await status.edit_text(f"Separating {STEM} on the GPU...")
+        await status.edit_text(t(lang, "separating", **tx))
         stem_path, other_path = await separate(
             input_path, str(workdir / "out"), device=DEVICE
         )
@@ -85,51 +89,49 @@ async def _separate_and_send(message, status, input_path: str, workdir: Path) ->
             stem_path, other_path, emphasis_path, stem_volume=0.7, other_volume=0.3
         )
 
-    await status.edit_text("Done - uploading tracks...")
+    await status.edit_text(t(lang, "uploading"))
     with open(stem_path, "rb") as fh:
-        await message.reply_audio(fh, title=STEM.capitalize(), caption=f"Isolated {STEM}")
+        await message.reply_audio(
+            fh, title=t(lang, "title_isolated", **tx), caption=t(lang, "caption_isolated", **tx)
+        )
     with open(other_path, "rb") as fh:
         await message.reply_audio(
-            fh, title="Everything else", caption=f"Mix without {STEM}"
+            fh, title=t(lang, "title_everything", **tx), caption=t(lang, "caption_everything", **tx)
         )
     with open(emphasis_path, "rb") as fh:
         await message.reply_audio(
-            fh,
-            title=f"{STEM.capitalize()} emphasized",
-            caption=f"{STEM.capitalize()} at 70%, everything else at 30%",
+            fh, title=t(lang, "title_emphasis", **tx), caption=t(lang, "caption_emphasis", **tx)
         )
     await status.delete()
 
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
+    lang = _lang(update)
     audio = _pick_audio(message)
     if audio is None:
-        await message.reply_text("Please send an audio file (mp3, m4a, wav, ...).")
+        await message.reply_text(t(lang, "please_send_audio"))
         return
 
     if audio.file_size and audio.file_size > MAX_INPUT_BYTES:
-        await message.reply_text(
-            "That file is over Telegram's 20 MB bot download limit. "
-            "Try a shorter clip, a lower bitrate, or send a Spotify link instead."
-        )
+        await message.reply_text(t(lang, "too_large"))
         return
 
-    status = await message.reply_text("Got it - downloading...")
+    status = await message.reply_text(t(lang, "downloading"))
     workdir = Path(tempfile.mkdtemp(prefix="drumsplit_"))
     try:
         tg_file = await audio.get_file()
         filename = getattr(audio, "file_name", None) or f"{audio.file_unique_id}.mp3"
         input_path = workdir / filename
         await tg_file.download_to_drive(custom_path=str(input_path))
-        await _separate_and_send(message, status, str(input_path), workdir)
+        await _separate_and_send(message, status, str(input_path), workdir, lang)
     except SeparationError:
         logger.exception("Demucs separation failed")
-        await status.edit_text("Separation failed - check the server logs.")
+        await status.edit_text(t(lang, "failed_separation"))
     except Exception as exc:  # noqa: BLE001 - surface unexpected errors to the user
         logger.exception("Unexpected error while handling audio")
         try:
-            await status.edit_text(f"Something went wrong: {exc}")
+            await status.edit_text(t(lang, "error", error=exc))
         except Exception:
             pass
     finally:
@@ -138,32 +140,27 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
+    lang = _lang(update)
     url = find_track_url(message.text)
     if url is None:
-        await message.reply_text(
-            "Send me an audio file or a Spotify track link "
-            "(https://open.spotify.com/track/...)."
-        )
+        await message.reply_text(t(lang, "send_audio_or_link"))
         return
 
-    status = await message.reply_text("Got it - fetching the track from Spotify...")
+    status = await message.reply_text(t(lang, "fetching_spotify"))
     workdir = Path(tempfile.mkdtemp(prefix="drumsplit_"))
     try:
         input_path = await download_track(url, str(workdir / "dl"))
-        await _separate_and_send(message, status, input_path, workdir)
+        await _separate_and_send(message, status, input_path, workdir, lang)
     except DownloadError:
         logger.exception("spotDL download failed")
-        await status.edit_text(
-            "Couldn't download that track. Make sure it's a valid Spotify "
-            "track link (not an album/playlist)."
-        )
+        await status.edit_text(t(lang, "failed_download"))
     except SeparationError:
         logger.exception("Demucs separation failed")
-        await status.edit_text("Separation failed - check the server logs.")
+        await status.edit_text(t(lang, "failed_separation"))
     except Exception as exc:  # noqa: BLE001 - surface unexpected errors to the user
         logger.exception("Unexpected error while handling Spotify link")
         try:
-            await status.edit_text(f"Something went wrong: {exc}")
+            await status.edit_text(t(lang, "error", error=exc))
         except Exception:
             pass
     finally:

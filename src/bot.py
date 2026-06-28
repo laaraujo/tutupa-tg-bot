@@ -174,7 +174,7 @@ def main() -> None:
     if not TOKEN:
         raise SystemExit(
             "TELEGRAM_BOT_TOKEN is not set. Create a bot with @BotFather and put "
-            "the token in backend/.env (see .env.example)."
+            "the token in .env (see .env.example)."
         )
 
     app = Application.builder().token(TOKEN).build()

@@ -17,7 +17,7 @@ _MESSAGES = {
         "en": (
             "Send me either:\n"
             "\u2022 an audio file (mp3, m4a, wav, ...), or\n"
-            "\u2022 a Spotify track link (https://open.spotify.com/track/...)\n\n"
+            "\u2022 a Spotify track link\n\n"
             "and I'll split it into:\n"
             "\u2022 {stem}\n"
             "\u2022 everything else (the mix without {stem})\n"
@@ -28,7 +28,6 @@ _MESSAGES = {
             "Envíame:\n"
             "\u2022 un archivo de audio (mp3, m4a, wav, ...), o\n"
             "\u2022 el enlace de una canción de Spotify "
-            "(https://open.spotify.com/track/...)\n\n"
             "y lo separaré en:\n"
             "\u2022 {stem}\n"
             "\u2022 todo lo demas (la mezcla sin {stem})\n"

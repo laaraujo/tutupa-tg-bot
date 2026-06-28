@@ -86,7 +86,7 @@ async def _separate_and_send(
         )
         emphasis_path = str(workdir / f"{STEM}_emphasis.{FMT}")
         await mix_emphasis(
-            stem_path, other_path, emphasis_path, stem_volume=0.7, other_volume=0.3
+            stem_path, other_path, emphasis_path, stem_volume=1.0, other_volume=0.5
         )
 
     await status.edit_text(t(lang, "uploading"))

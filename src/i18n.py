@@ -21,7 +21,7 @@ _MESSAGES = {
             "and I'll split it into:\n"
             "\u2022 {stem}\n"
             "\u2022 everything else (the mix without {stem})\n"
-            "\u2022 {stem} emphasized ({stem} at 70%, everything else at 30%)\n\n"
+            "\u2022 {stem} emphasized ({stem} at 100%, everything else at 50%)\n\n"
             "Processing runs on a local GPU. Uploaded files must be under 20 MB "
             "(Telegram's bot download limit); Spotify links have no such limit."
         ),
@@ -33,7 +33,7 @@ _MESSAGES = {
             "y lo separaré en:\n"
             "\u2022 {stem}\n"
             "\u2022 el resto (la mezcla sin {stem})\n"
-            "\u2022 {stem} resaltada ({stem} al 70%, el resto al 30%)\n\n"
+            "\u2022 {stem} resaltada ({stem} al 100%, el resto al 50%)\n\n"
             "El procesamiento usa una GPU local. Los archivos subidos deben pesar "
             "menos de 20 MB (límite de descarga de bots de Telegram); los enlaces "
             "de Spotify no tienen ese límite."
@@ -122,8 +122,8 @@ _MESSAGES = {
         "es": "{stem_cap} resaltada",
     },
     "caption_emphasis": {
-        "en": "{stem_cap} at 70%, everything else at 30%",
-        "es": "{stem_cap} al 70%, el resto al 30%",
+        "en": "{stem_cap} at 100%, everything else at 50%",
+        "es": "{stem_cap} al 100%, el resto al 50%",
     },
 }
 

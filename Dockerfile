@@ -17,6 +17,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY separate.py spotify_dl.py bot.py ./
+COPY src/ ./
 
 CMD ["python", "bot.py"]

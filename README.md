@@ -1,14 +1,31 @@
-# lausplitter backend
+# drumsplit-tg-bot
 
-A Telegram bot that splits an audio file into two tracks using
-[Demucs](https://github.com/facebookresearch/demucs):
+A Telegram bot that splits audio into stems using the fine-tuned
+[Demucs](https://github.com/facebookresearch/demucs) model (`htdemucs_ft`). For
+each track it returns three lossless FLAC files:
 
-- **drums** (percussion)
+- **drums** (the isolated percussion)
 - **everything else** (the mix with drums removed)
+- **drums emphasized** (drums at 70%, everything else at 30%)
 
 It runs entirely on your machine. Demucs uses the GPU (RTX 3090) inside a Docker
 container. Because the bot talks to Telegram via outbound long-polling, there is
 no inbound networking to configure (no port forwarding, no tunnels).
+
+## Project layout
+
+```
+.                     # Docker + config live at the root
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── .env              # your bot token (not committed)
+├── cache/            # Demucs model weights (persisted)
+└── src/              # all Python code
+    ├── bot.py        # Telegram bot
+    ├── separate.py   # Demucs + ffmpeg mixing
+    └── spotify_dl.py # Spotify link -> mp3 via spotDL
+```
 
 ## How it works
 
@@ -42,7 +59,8 @@ docker compose up --build
 ```
 
 The first build downloads CUDA PyTorch (large); the first separation downloads
-the Demucs model weights (~80 MB) into `./cache`, so later runs are fast.
+the fine-tuned Demucs model weights (~320 MB) into `./cache`, so later runs are
+fast.
 
 Then open Telegram, find your bot, and send it an audio file. Send `/start` for
 usage help.

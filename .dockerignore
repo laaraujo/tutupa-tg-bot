@@ -1,3 +1,5 @@
+.git/
+.gitignore
 .env
 .env.example
 cache/
@@ -6,3 +8,4 @@ testdata/
 __pycache__/
 *.pyc
 README.md
+LICENSE

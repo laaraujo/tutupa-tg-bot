@@ -1,0 +1,18 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      TORCH_HOME: /cache/torch
+      DEMUCS_DEVICE: ${DEMUCS_DEVICE:-cuda}
+    volumes:
+      # Persist Demucs model weights between runs (downloaded once).
+      - ./cache:/cache
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

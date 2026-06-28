@@ -1,0 +1,5 @@
+demucs
+spotdl
+python-telegram-bot>=21
+python-dotenv
+soundfile

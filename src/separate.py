@@ -153,3 +153,25 @@ async def tag_file(
     if proc.returncode != 0:
         raise SeparationError(output.decode(errors="replace"))
     return dst
+
+
+async def transcode_mp3(src: str, dst: str, bitrate: str = "320k") -> str:
+    """Transcode ``src`` to an MP3 at ``bitrate``, carrying over its metadata."""
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", src,
+        "-map", "0:a",
+        "-c:a", "libmp3lame",
+        "-b:a", bitrate,
+        "-map_metadata", "0",
+        dst,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    output, _ = await proc.communicate()
+    if proc.returncode != 0:
+        raise SeparationError(output.decode(errors="replace"))
+    return dst

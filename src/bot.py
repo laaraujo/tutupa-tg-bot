@@ -31,6 +31,7 @@ from separate import (
     probe_tags,
     separate,
     tag_file,
+    transcode_mp3,
 )
 from spotify_dl import DownloadError, download_track, find_track_url
 from i18n import resolve_lang, stem_label, t
@@ -42,6 +43,10 @@ DEVICE = os.environ.get("DEMUCS_DEVICE", "cuda")
 
 # Telegram bots can download files up to 20 MB via the standard Bot API.
 MAX_INPUT_BYTES = 20 * 1024 * 1024
+
+# Telegram bots can upload files up to 50 MB. Leave headroom for multipart
+# overhead; anything bigger gets transcoded to MP3 before sending.
+MAX_UPLOAD_BYTES = 49 * 1024 * 1024
 
 logging.basicConfig(
     level=logging.INFO,
@@ -130,8 +135,18 @@ async def _separate_and_send(
         await tag_file(
             path, tagged, title=display_title, artist=artist, album=album, comment=kind
         )
-        filename = _safe_filename([artist, song, kind], FMT)
-        with open(tagged, "rb") as fh:
+
+        # Lossless by default, but fall back to MP3 if the FLAC is too big to
+        # upload through the standard Bot API.
+        send_path = tagged
+        ext = FMT
+        if os.path.getsize(tagged) > MAX_UPLOAD_BYTES:
+            send_path = str(workdir / f"out_{index}.mp3")
+            await transcode_mp3(tagged, send_path)
+            ext = "mp3"
+
+        filename = _safe_filename([artist, song, kind], ext)
+        with open(send_path, "rb") as fh:
             await message.reply_audio(
                 fh,
                 title=display_title,

@@ -1,8 +1,8 @@
 """Telegram bot that splits audio into a target stem vs. everything else.
 
-Send the bot an audio file, or a Spotify track link. It produces an mp3 (via
-spotDL for Spotify links), runs Demucs on the GPU, and replies with two tracks:
-the isolated stem and the full mix with that stem removed.
+Send the bot an audio file, or a Spotify track link (downloaded via spotDL).
+It runs Demucs on the GPU and replies with three MP3 tracks: the isolated stem,
+the full mix with that stem removed, and a stem-emphasized mix.
 """
 
 import asyncio
@@ -30,7 +30,6 @@ from separate import (
     mix_emphasis,
     probe_tags,
     separate,
-    tag_file,
     transcode_mp3,
 )
 from spotify_dl import DownloadError, download_track, find_track_url
@@ -43,10 +42,6 @@ DEVICE = os.environ.get("DEMUCS_DEVICE", "cuda")
 
 # Telegram bots can download files up to 20 MB via the standard Bot API.
 MAX_INPUT_BYTES = 20 * 1024 * 1024
-
-# Telegram bots can upload files up to 50 MB. Leave headroom for multipart
-# overhead; anything bigger gets transcoded to MP3 before sending.
-MAX_UPLOAD_BYTES = 49 * 1024 * 1024
 
 logging.basicConfig(
     level=logging.INFO,
@@ -98,7 +93,7 @@ async def _separate_and_send(
     lang: str,
     meta_hint: dict | None = None,
 ) -> None:
-    """Run separation on ``input_path`` and reply with the resulting tracks."""
+    """Separate ``input_path`` and reply with all tracks as MP3s."""
     stem = stem_label(lang, STEM)
     tx = {"stem": stem, "stem_cap": stem.capitalize()}
 
@@ -131,22 +126,13 @@ async def _separate_and_send(
     ]
     for index, (path, kind) in enumerate(outputs):
         display_title = f"{song} - {kind}"
-        tagged = str(workdir / f"out_{index}.{FMT}")
-        await tag_file(
-            path, tagged, title=display_title, artist=artist, album=album, comment=kind
+        mp3_path = str(workdir / f"out_{index}.mp3")
+        await transcode_mp3(
+            path, mp3_path,
+            title=display_title, artist=artist, album=album, comment=kind,
         )
-
-        # Lossless by default, but fall back to MP3 if the FLAC is too big to
-        # upload through the standard Bot API.
-        send_path = tagged
-        ext = FMT
-        if os.path.getsize(tagged) > MAX_UPLOAD_BYTES:
-            send_path = str(workdir / f"out_{index}.mp3")
-            await transcode_mp3(tagged, send_path)
-            ext = "mp3"
-
-        filename = _safe_filename([artist, song, kind], ext)
-        with open(send_path, "rb") as fh:
+        filename = _safe_filename([artist, song, kind], "mp3")
+        with open(mp3_path, "rb") as fh:
             await message.reply_audio(
                 fh,
                 title=display_title,
@@ -231,8 +217,8 @@ def main() -> None:
             "the token in .env (see .env.example)."
         )
 
-    # Lossless FLAC stems are large; the default 5s write timeout isn't nearly
-    # enough to upload them, so give uploads a generous window.
+    # Audio uploads can be several MB; the default 5s write timeout isn't
+    # enough, so give uploads a generous window.
     app = (
         Application.builder()
         .token(TOKEN)

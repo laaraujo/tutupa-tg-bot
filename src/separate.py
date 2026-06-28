@@ -123,17 +123,24 @@ async def probe_tags(path: str) -> dict:
     return {str(k).lower(): v for k, v in tags.items()}
 
 
-async def tag_file(
+async def transcode_mp3(
     src: str,
     dst: str,
     *,
+    bitrate: str = "320k",
     title: str | None = None,
     artist: str | None = None,
     album: str | None = None,
     comment: str | None = None,
 ) -> str:
-    """Copy ``src`` to ``dst`` (lossless, no re-encode) with metadata tags set."""
-    cmd = ["ffmpeg", "-y", "-i", src, "-map", "0:a", "-c", "copy"]
+    """Transcode ``src`` to an MP3 at ``bitrate`` with the given metadata tags."""
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", src,
+        "-map", "0:a",
+        "-c:a", "libmp3lame",
+        "-b:a", bitrate,
+    ]
     for key, value in (
         ("title", title),
         ("artist", artist),
@@ -144,28 +151,6 @@ async def tag_file(
             cmd += ["-metadata", f"{key}={value}"]
     cmd.append(dst)
 
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    output, _ = await proc.communicate()
-    if proc.returncode != 0:
-        raise SeparationError(output.decode(errors="replace"))
-    return dst
-
-
-async def transcode_mp3(src: str, dst: str, bitrate: str = "320k") -> str:
-    """Transcode ``src`` to an MP3 at ``bitrate``, carrying over its metadata."""
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", src,
-        "-map", "0:a",
-        "-c:a", "libmp3lame",
-        "-b:a", bitrate,
-        "-map_metadata", "0",
-        dst,
-    ]
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,

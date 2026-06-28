@@ -22,8 +22,7 @@ _MESSAGES = {
             "\u2022 {stem}\n"
             "\u2022 everything else (the mix without {stem})\n"
             "\u2022 {stem} emphasized ({stem} at 100%, everything else at 50%)\n\n"
-            "Processing runs on a local GPU. Uploaded files must be under 20 MB "
-            "(Telegram's bot download limit); Spotify links have no such limit."
+            "Uploaded files must be under 20 MB; Spotify links have no such limit."
         ),
         "es": (
             "Envíame:\n"
@@ -34,9 +33,8 @@ _MESSAGES = {
             "\u2022 {stem}\n"
             "\u2022 el resto (la mezcla sin {stem})\n"
             "\u2022 {stem} resaltada ({stem} al 100%, el resto al 50%)\n\n"
-            "El procesamiento usa una GPU local. Los archivos subidos deben pesar "
-            "menos de 20 MB (límite de descarga de bots de Telegram); los enlaces "
-            "de Spotify no tienen ese límite."
+            "Los archivos subidos deben pesar menos de 20 MB; los enlaces de "
+            "Spotify no tienen ese límite."
         ),
     },
     "please_send_audio": {
@@ -55,12 +53,12 @@ _MESSAGES = {
     },
     "too_large": {
         "en": (
-            "That file is over Telegram's 20 MB bot download limit. Try a shorter "
-            "clip, a lower bitrate, or send a Spotify link instead."
+            "That file is too large (over 20 MB). Try a shorter clip, a lower "
+            "bitrate, or send a Spotify link instead."
         ),
         "es": (
-            "Ese archivo supera el límite de 20 MB de descarga de bots de Telegram. "
-            "Prueba con un clip más corto, menor calidad, o envía un enlace de Spotify."
+            "Ese archivo es demasiado grande (más de 20 MB). Prueba con un clip "
+            "más corto, menor calidad, o envía un enlace de Spotify."
         ),
     },
     "downloading": {
@@ -76,16 +74,16 @@ _MESSAGES = {
         "es": "En cola: se está procesando otra pista...",
     },
     "separating": {
-        "en": "Separating {stem} on the GPU...",
-        "es": "Separando {stem} en la GPU...",
+        "en": "Separating {stem}...",
+        "es": "Separando {stem}...",
     },
     "uploading": {
         "en": "Done - uploading tracks...",
         "es": "Listo: subiendo las pistas...",
     },
     "failed_separation": {
-        "en": "Separation failed - check the server logs.",
-        "es": "Falló la separación: revisa los registros del servidor.",
+        "en": "Sorry, I couldn't separate that track. Please try again.",
+        "es": "Lo siento, no pude separar esa pista. Inténtalo de nuevo.",
     },
     "failed_download": {
         "en": (
@@ -98,32 +96,20 @@ _MESSAGES = {
         ),
     },
     "error": {
-        "en": "Something went wrong: {error}",
-        "es": "Algo salió mal: {error}",
+        "en": "Something went wrong. Please try again.",
+        "es": "Algo salió mal. Inténtalo de nuevo.",
     },
     "title_isolated": {
         "en": "{stem_cap}",
         "es": "{stem_cap}",
     },
-    "caption_isolated": {
-        "en": "Isolated {stem}",
-        "es": "{stem_cap} aislada",
-    },
     "title_everything": {
         "en": "Everything else",
         "es": "El resto",
     },
-    "caption_everything": {
-        "en": "Mix without {stem}",
-        "es": "Mezcla sin {stem}",
-    },
     "title_emphasis": {
         "en": "{stem_cap} emphasized",
         "es": "{stem_cap} resaltada",
-    },
-    "caption_emphasis": {
-        "en": "{stem_cap} at 100%, everything else at 50%",
-        "es": "{stem_cap} al 100%, el resto al 50%",
     },
 }
 

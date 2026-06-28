@@ -1,6 +1,7 @@
 """Run Demucs to split an audio file into a target stem vs. everything else."""
 
 import asyncio
+import json
 from pathlib import Path
 
 # Fine-tuned model: noticeably cleaner separation than plain htdemucs
@@ -93,3 +94,62 @@ async def mix_emphasis(
     if proc.returncode != 0:
         raise SeparationError(output.decode(errors="replace"))
     return out_path
+
+
+async def probe_tags(path: str) -> dict:
+    """Return the source file's metadata tags (lowercased keys) via ffprobe.
+
+    Returns an empty dict if the file has no tags or ffprobe fails.
+    """
+    cmd = [
+        "ffprobe", "-v", "quiet",
+        "-print_format", "json",
+        "-show_format",
+        path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    output, _ = await proc.communicate()
+    if proc.returncode != 0:
+        return {}
+    try:
+        data = json.loads(output.decode(errors="replace"))
+    except json.JSONDecodeError:
+        return {}
+    tags = (data.get("format") or {}).get("tags") or {}
+    return {str(k).lower(): v for k, v in tags.items()}
+
+
+async def tag_file(
+    src: str,
+    dst: str,
+    *,
+    title: str | None = None,
+    artist: str | None = None,
+    album: str | None = None,
+    comment: str | None = None,
+) -> str:
+    """Copy ``src`` to ``dst`` (lossless, no re-encode) with metadata tags set."""
+    cmd = ["ffmpeg", "-y", "-i", src, "-map", "0:a", "-c", "copy"]
+    for key, value in (
+        ("title", title),
+        ("artist", artist),
+        ("album", album),
+        ("comment", comment),
+    ):
+        if value:
+            cmd += ["-metadata", f"{key}={value}"]
+    cmd.append(dst)
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    output, _ = await proc.communicate()
+    if proc.returncode != 0:
+        raise SeparationError(output.decode(errors="replace"))
+    return dst

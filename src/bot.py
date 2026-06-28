@@ -8,6 +8,7 @@ the isolated stem and the full mix with that stem removed.
 import asyncio
 import logging
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -22,7 +23,15 @@ from telegram.ext import (
     filters,
 )
 
-from separate import FMT, STEM, SeparationError, mix_emphasis, separate
+from separate import (
+    FMT,
+    STEM,
+    SeparationError,
+    mix_emphasis,
+    probe_tags,
+    separate,
+    tag_file,
+)
 from spotify_dl import DownloadError, download_track, find_track_url
 from i18n import resolve_lang, stem_label, t
 
@@ -69,8 +78,20 @@ def _pick_audio(message):
     return None
 
 
+def _safe_filename(parts: list[str], ext: str) -> str:
+    """Build a filesystem/Telegram-safe filename from non-empty parts."""
+    base = " - ".join(p for p in parts if p)
+    base = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", base).strip(" .") or "track"
+    return f"{base[:120]}.{ext}"
+
+
 async def _separate_and_send(
-    message, status, input_path: str, workdir: Path, lang: str
+    message,
+    status,
+    input_path: str,
+    workdir: Path,
+    lang: str,
+    meta_hint: dict | None = None,
 ) -> None:
     """Run separation on ``input_path`` and reply with the resulting tracks."""
     stem = stem_label(lang, STEM)
@@ -89,19 +110,34 @@ async def _separate_and_send(
             stem_path, other_path, emphasis_path, stem_volume=1.0, other_volume=0.5
         )
 
+    # Source metadata: spotDL embeds full tags; uploads may carry some too.
+    tags = await probe_tags(input_path)
+    hint = meta_hint or {}
+    song = tags.get("title") or hint.get("title") or Path(input_path).stem
+    artist = tags.get("artist") or hint.get("artist") or ""
+    album = tags.get("album") or ""
+
     await status.edit_text(t(lang, "uploading"))
-    with open(stem_path, "rb") as fh:
-        await message.reply_audio(
-            fh, title=t(lang, "title_isolated", **tx), caption=t(lang, "caption_isolated", **tx)
+
+    outputs = [
+        (stem_path, t(lang, "title_isolated", **tx)),
+        (other_path, t(lang, "title_everything", **tx)),
+        (emphasis_path, t(lang, "title_emphasis", **tx)),
+    ]
+    for index, (path, kind) in enumerate(outputs):
+        display_title = f"{song} - {kind}"
+        tagged = str(workdir / f"out_{index}.{FMT}")
+        await tag_file(
+            path, tagged, title=display_title, artist=artist, album=album, comment=kind
         )
-    with open(other_path, "rb") as fh:
-        await message.reply_audio(
-            fh, title=t(lang, "title_everything", **tx), caption=t(lang, "caption_everything", **tx)
-        )
-    with open(emphasis_path, "rb") as fh:
-        await message.reply_audio(
-            fh, title=t(lang, "title_emphasis", **tx), caption=t(lang, "caption_emphasis", **tx)
-        )
+        filename = _safe_filename([artist, song, kind], FMT)
+        with open(tagged, "rb") as fh:
+            await message.reply_audio(
+                fh,
+                title=display_title,
+                performer=artist or None,
+                filename=filename,
+            )
     await status.delete()
 
 
@@ -124,14 +160,20 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         filename = getattr(audio, "file_name", None) or f"{audio.file_unique_id}.mp3"
         input_path = workdir / filename
         await tg_file.download_to_drive(custom_path=str(input_path))
-        await _separate_and_send(message, status, str(input_path), workdir, lang)
+        meta_hint = {
+            "title": getattr(audio, "title", None),
+            "artist": getattr(audio, "performer", None),
+        }
+        await _separate_and_send(
+            message, status, str(input_path), workdir, lang, meta_hint
+        )
     except SeparationError:
         logger.exception("Demucs separation failed")
         await status.edit_text(t(lang, "failed_separation"))
-    except Exception as exc:  # noqa: BLE001 - surface unexpected errors to the user
+    except Exception:  # noqa: BLE001 - surface unexpected errors to the user
         logger.exception("Unexpected error while handling audio")
         try:
-            await status.edit_text(t(lang, "error", error=exc))
+            await status.edit_text(t(lang, "error"))
         except Exception:
             pass
     finally:
@@ -157,10 +199,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except SeparationError:
         logger.exception("Demucs separation failed")
         await status.edit_text(t(lang, "failed_separation"))
-    except Exception as exc:  # noqa: BLE001 - surface unexpected errors to the user
+    except Exception:  # noqa: BLE001 - surface unexpected errors to the user
         logger.exception("Unexpected error while handling Spotify link")
         try:
-            await status.edit_text(t(lang, "error", error=exc))
+            await status.edit_text(t(lang, "error"))
         except Exception:
             pass
     finally:
@@ -174,7 +216,17 @@ def main() -> None:
             "the token in .env (see .env.example)."
         )
 
-    app = Application.builder().token(TOKEN).build()
+    # Lossless FLAC stems are large; the default 5s write timeout isn't nearly
+    # enough to upload them, so give uploads a generous window.
+    app = (
+        Application.builder()
+        .token(TOKEN)
+        .connect_timeout(30)
+        .read_timeout(300)
+        .write_timeout(300)
+        .pool_timeout(30)
+        .build()
+    )
     app.add_handler(CommandHandler(["start", "help"], start))
     app.add_handler(
         MessageHandler(

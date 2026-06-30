@@ -19,9 +19,9 @@ _MESSAGES = {
             "\u2022 an audio file (mp3, m4a, wav, ...), or\n"
             "\u2022 a Spotify track link\n\n"
             "and I'll split it into:\n"
-            "\u2022 {stem}\n"
-            "\u2022 everything else (the mix without {stem})\n"
-            "\u2022 {stem} emphasized ({stem} at 100%, everything else at 50%)\n\n"
+            "\u2022 Just {stem}\n"
+            "\u2022 No {stem}\n"
+            "\u2022 {stem} emphasized\n\n"
             "Uploaded files must be under 20 MB; Spotify links have no such limit."
         ),
         "es": (
@@ -29,12 +29,38 @@ _MESSAGES = {
             "\u2022 un archivo de audio (mp3, m4a, wav, ...), o\n"
             "\u2022 el enlace de una canción de Spotify "
             "y lo separaré en:\n"
-            "\u2022 {stem}\n"
-            "\u2022 todo lo demas (la mezcla sin {stem})\n"
-            "\u2022 {stem} resaltada ({stem} al 100%, todo lo demas al 50%)\n\n"
+            "\u2022 Solo{stem}\n"
+            "\u2022 Sin {stem}\n"
+            "\u2022 {stem} resaltada\n\n"
             "Los archivos subidos deben pesar menos de 20 MB; los enlaces de "
             "Spotify no tienen ese límite."
         ),
+    },
+    "choose_outputs": {
+        "en": (
+            "Which track(s) do you want? Tap to select one or more, "
+            "then press Send."
+        ),
+        "es": (
+            "¿Qué pista(s) querés? Tocá para elegir una o más y luego "
+            "presioná Enviar."
+        ),
+    },
+    "btn_all": {
+        "en": "Select all",
+        "es": "Seleccionar todo",
+    },
+    "btn_send": {
+        "en": "Send",
+        "es": "Enviar",
+    },
+    "select_at_least_one": {
+        "en": "Select at least one track first.",
+        "es": "Elegí al menos una pista primero.",
+    },
+    "request_expired": {
+        "en": "This request expired. Please send the song again.",
+        "es": "Esta solicitud expiró. Envía la canción de nuevo.",
     },
     "please_send_audio": {
         "en": "Please send an audio file (mp3, m4a, wav, ...).",
@@ -99,12 +125,12 @@ _MESSAGES = {
         "es": "Algo salió mal. Inténtalo de nuevo.",
     },
     "title_isolated": {
-        "en": "{stem_cap}",
-        "es": "{stem_cap}",
+        "en": "Just {stem}",
+        "es": "Solo {stem}",
     },
     "title_everything": {
-        "en": "Everything else",
-        "es": "Todo lo demas",
+        "en": "No {stem}",
+        "es": "Sin {stem}",
     },
     "title_emphasis": {
         "en": "{stem_cap} emphasized",

@@ -1,8 +1,9 @@
 """Telegram bot that splits audio into a target stem vs. everything else.
 
 Send the bot an audio file, or a Spotify track link (downloaded via spotDL).
-It runs Demucs on the GPU and replies with three MP3 tracks: the isolated stem,
-the full mix with that stem removed, and a stem-emphasized mix.
+It asks which output(s) you want, then runs Demucs on the GPU and replies with
+the chosen MP3 tracks: the isolated stem, the full mix with that stem removed,
+and/or a stem-emphasized mix.
 """
 
 import asyncio
@@ -11,12 +12,15 @@ import os
 import re
 import shutil
 import tempfile
+import time
+import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -52,10 +56,71 @@ logger = logging.getLogger("drumsplit-tg-bot")
 # Only one separation at a time so concurrent requests don't fight over the GPU.
 job_lock = asyncio.Lock()
 
+# The selectable outputs, in display order. Each maps to the i18n title key used
+# both for the button label and the resulting track title.
+OUTPUT_KEYS = ["isolated", "everything", "emphasis"]
+OUTPUT_TITLES = {
+    "isolated": "title_isolated",
+    "everything": "title_everything",
+    "emphasis": "title_emphasis",
+}
+
+# Pending requests awaiting an output selection, keyed by a short token embedded
+# in the inline-keyboard callback data. Telegram limits callback_data to 64
+# bytes, so we can't stash the whole request there.
+_PENDING_TTL = 3600  # seconds; drop selections the user never confirmed
+pending_jobs: dict[str, dict] = {}
+
 
 def _lang(update: Update) -> str:
     user = update.effective_user
     return resolve_lang(user.language_code if user else None)
+
+
+def _tx(lang: str) -> dict:
+    """Common template kwargs (localized stem name) for message formatting."""
+    stem = stem_label(lang, STEM)
+    return {"stem": stem, "stem_cap": stem.capitalize()}
+
+
+def _cleanup_jobs() -> None:
+    now = time.monotonic()
+    for token in [
+        k for k, v in pending_jobs.items() if now - v["created"] > _PENDING_TTL
+    ]:
+        pending_jobs.pop(token, None)
+
+
+def _new_job(data: dict) -> str:
+    """Register a pending request and return its lookup token."""
+    _cleanup_jobs()
+    token = uuid.uuid4().hex
+    data["created"] = time.monotonic()
+    data["selected"] = set()
+    pending_jobs[token] = data
+    return token
+
+
+def _build_keyboard(token: str, lang: str, selected: set[str]) -> InlineKeyboardMarkup:
+    tx = _tx(lang)
+    rows = []
+    for index, key in enumerate(OUTPUT_KEYS):
+        mark = "\u2705 " if key in selected else "\u2b1c "  # check / empty box
+        label = mark + t(lang, OUTPUT_TITLES[key], **tx)
+        rows.append(
+            [InlineKeyboardButton(label, callback_data=f"s|{token}|t|{index}")]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                t(lang, "btn_all"), callback_data=f"s|{token}|all"
+            ),
+            InlineKeyboardButton(
+                t(lang, "btn_send"), callback_data=f"s|{token}|go"
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -91,9 +156,10 @@ async def _separate_and_send(
     input_path: str,
     workdir: Path,
     lang: str,
+    selected: set[str],
     meta_hint: dict | None = None,
 ) -> None:
-    """Separate ``input_path`` and reply with all tracks as MP3s."""
+    """Separate ``input_path`` and reply with the ``selected`` tracks as MP3s."""
     stem = stem_label(lang, STEM)
     tx = {"stem": stem, "stem_cap": stem.capitalize()}
 
@@ -102,13 +168,17 @@ async def _separate_and_send(
 
     async with job_lock:
         await status.edit_text(t(lang, "separating", **tx))
+        # demucs two-stem mode produces both stems in one run, so we always
+        # separate; only the emphasis mix is extra work we can skip.
         stem_path, other_path = await separate(
             input_path, str(workdir / "out"), device=DEVICE
         )
         emphasis_path = str(workdir / f"{STEM}_emphasis.{FMT}")
-        await mix_emphasis(
-            stem_path, other_path, emphasis_path, stem_volume=1.0, other_volume=0.5
-        )
+        if "emphasis" in selected:
+            await mix_emphasis(
+                stem_path, other_path, emphasis_path,
+                stem_volume=1.0, other_volume=0.5,
+            )
 
     # Source metadata: spotDL embeds full tags; uploads may carry some too.
     tags = await probe_tags(input_path)
@@ -119,11 +189,12 @@ async def _separate_and_send(
 
     await status.edit_text(t(lang, "uploading"))
 
-    outputs = [
-        (stem_path, t(lang, "title_isolated", **tx)),
-        (other_path, t(lang, "title_everything", **tx)),
-        (emphasis_path, t(lang, "title_emphasis", **tx)),
-    ]
+    available = {
+        "isolated": (stem_path, t(lang, "title_isolated", **tx)),
+        "everything": (other_path, t(lang, "title_everything", **tx)),
+        "emphasis": (emphasis_path, t(lang, "title_emphasis", **tx)),
+    }
+    outputs = [available[key] for key in OUTPUT_KEYS if key in selected]
     for index, (path, kind) in enumerate(outputs):
         display_title = f"{song} - {kind}"
         mp3_path = str(workdir / f"out_{index}.mp3")
@@ -154,31 +225,21 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await message.reply_text(t(lang, "too_large"))
         return
 
-    status = await message.reply_text(t(lang, "downloading"))
-    workdir = Path(tempfile.mkdtemp(prefix="drumsplit_"))
-    try:
-        tg_file = await audio.get_file()
-        filename = getattr(audio, "file_name", None) or f"{audio.file_unique_id}.mp3"
-        input_path = workdir / filename
-        await tg_file.download_to_drive(custom_path=str(input_path))
-        meta_hint = {
-            "title": getattr(audio, "title", None),
-            "artist": getattr(audio, "performer", None),
+    token = _new_job(
+        {
+            "kind": "audio",
+            "message": message,
+            "audio": audio,
+            "meta_hint": {
+                "title": getattr(audio, "title", None),
+                "artist": getattr(audio, "performer", None),
+            },
         }
-        await _separate_and_send(
-            message, status, str(input_path), workdir, lang, meta_hint
-        )
-    except SeparationError:
-        logger.exception("Demucs separation failed")
-        await status.edit_text(t(lang, "failed_separation"))
-    except Exception:  # noqa: BLE001 - surface unexpected errors to the user
-        logger.exception("Unexpected error while handling audio")
-        try:
-            await status.edit_text(t(lang, "error"))
-        except Exception:
-            pass
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+    )
+    await message.reply_text(
+        t(lang, "choose_outputs", **_tx(lang)),
+        reply_markup=_build_keyboard(token, lang, set()),
+    )
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -189,11 +250,83 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await message.reply_text(t(lang, "send_audio_or_link"))
         return
 
-    status = await message.reply_text(t(lang, "fetching_spotify"))
+    token = _new_job({"kind": "spotify", "message": message, "url": url})
+    await message.reply_text(
+        t(lang, "choose_outputs", **_tx(lang)),
+        reply_markup=_build_keyboard(token, lang, set()),
+    )
+
+
+async def handle_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle inline-keyboard taps: toggle outputs or run the confirmed job."""
+    query = update.callback_query
+    lang = _lang(update)
+    parts = query.data.split("|")
+    token = parts[1] if len(parts) > 1 else ""
+    action = parts[2] if len(parts) > 2 else ""
+
+    job = pending_jobs.get(token)
+    if job is None:
+        await query.answer()
+        await query.edit_message_text(t(lang, "request_expired"))
+        return
+
+    if action == "t":
+        key = OUTPUT_KEYS[int(parts[3])]
+        job["selected"].symmetric_difference_update({key})
+        await query.answer()
+        await query.edit_message_reply_markup(
+            _build_keyboard(token, lang, job["selected"])
+        )
+        return
+
+    if action == "all":
+        job["selected"] = set(OUTPUT_KEYS)
+        await query.answer()
+        await query.edit_message_reply_markup(
+            _build_keyboard(token, lang, job["selected"])
+        )
+        return
+
+    if action == "go":
+        if not job["selected"]:
+            await query.answer(t(lang, "select_at_least_one"), show_alert=True)
+            return
+        pending_jobs.pop(token, None)
+        await query.answer()
+        await query.edit_message_reply_markup(reply_markup=None)
+        await _run_job(job, query.message, lang)
+
+
+async def _run_job(job: dict, status, lang: str) -> None:
+    """Download the source for ``job`` and send the selected separated tracks.
+
+    ``status`` is the keyboard message we reuse as the progress indicator.
+    """
+    message = job["message"]
+    selected = job["selected"]
     workdir = Path(tempfile.mkdtemp(prefix="drumsplit_"))
     try:
-        input_path = await download_track(url, str(workdir / "dl"))
-        await _separate_and_send(message, status, input_path, workdir, lang)
+        if job["kind"] == "audio":
+            audio = job["audio"]
+            await status.edit_text(t(lang, "downloading"))
+            tg_file = await audio.get_file()
+            filename = (
+                getattr(audio, "file_name", None)
+                or f"{audio.file_unique_id}.mp3"
+            )
+            input_path = workdir / filename
+            await tg_file.download_to_drive(custom_path=str(input_path))
+            await _separate_and_send(
+                message, status, str(input_path), workdir, lang, selected,
+                job.get("meta_hint"),
+            )
+        else:
+            await status.edit_text(t(lang, "fetching_spotify"))
+            input_path = await download_track(job["url"], str(workdir / "dl"))
+            await _separate_and_send(
+                message, status, input_path, workdir, lang, selected
+            )
     except DownloadError:
         logger.exception("spotDL download failed")
         await status.edit_text(t(lang, "failed_download"))
@@ -201,7 +334,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.exception("Demucs separation failed")
         await status.edit_text(t(lang, "failed_separation"))
     except Exception:  # noqa: BLE001 - surface unexpected errors to the user
-        logger.exception("Unexpected error while handling Spotify link")
+        logger.exception("Unexpected error while running job")
         try:
             await status.edit_text(t(lang, "error"))
         except Exception:
@@ -237,6 +370,7 @@ def main() -> None:
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)
     )
+    app.add_handler(CallbackQueryHandler(handle_selection, pattern=r"^s\|"))
     logger.info("Bot starting (long polling, device=%s)...", DEVICE)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 

@@ -51,7 +51,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
-logger = logging.getLogger("drumsplit-tg-bot")
+logger = logging.getLogger("tutupa-tg-bot")
 
 # Only one separation at a time so concurrent requests don't fight over the GPU.
 job_lock = asyncio.Lock()
@@ -305,7 +305,7 @@ async def _run_job(job: dict, status, lang: str) -> None:
     """
     message = job["message"]
     selected = job["selected"]
-    workdir = Path(tempfile.mkdtemp(prefix="drumsplit_"))
+    workdir = Path(tempfile.mkdtemp(prefix="tutupa_"))
     try:
         if job["kind"] == "audio":
             audio = job["audio"]

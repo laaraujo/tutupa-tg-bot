@@ -1,4 +1,4 @@
-# drumsplit-tg-bot
+# tutupa-tg-bot
 
 A Telegram bot that splits audio into stems using the fine-tuned
 [Demucs](https://github.com/facebookresearch/demucs) model (`htdemucs_ft`). For

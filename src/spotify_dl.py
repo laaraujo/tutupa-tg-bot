@@ -5,7 +5,7 @@ import logging
 import re
 from pathlib import Path
 
-logger = logging.getLogger("drumsplit-tg-bot")
+logger = logging.getLogger("tutupa-tg-bot")
 
 # Matches a Spotify track URL, optionally with an /intl-xx/ locale prefix.
 TRACK_URL_RE = re.compile(

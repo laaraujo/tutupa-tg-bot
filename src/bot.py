@@ -323,7 +323,14 @@ async def _run_job(job: dict, status, lang: str) -> None:
             )
         else:
             await status.edit_text(t(lang, "fetching_spotify"))
-            input_path = await download_track(job["url"], str(workdir / "dl"))
+
+            async def _searching_alternative() -> None:
+                await status.edit_text(t(lang, "searching_alternative"))
+
+            input_path = await download_track(
+                job["url"], str(workdir / "dl"),
+                on_fallback=_searching_alternative,
+            )
             await _separate_and_send(
                 message, status, input_path, workdir, lang, selected
             )

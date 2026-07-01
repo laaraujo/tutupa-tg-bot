@@ -94,6 +94,10 @@ _MESSAGES = {
         "en": "Got it - fetching the track from Spotify...",
         "es": "¡Listo! Obteniendo la canción de Spotify...",
     },
+    "searching_alternative": {
+        "en": "The usual source didn't work - looking for an alternative version... This will take a little longer than usual.",
+        "es": "La fuente habitual no funcionó: buscando una versión alternativa... Esto tomará un poco más de tiempo que de costumbre.",
+    },
     "queued": {
         "en": "Queued - another track is processing...",
         "es": "En cola: se está procesando otra pista...",

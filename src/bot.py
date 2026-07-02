@@ -204,11 +204,18 @@ async def _separate_and_send(
         )
         filename = _safe_filename([artist, song, kind], "mp3")
         with open(mp3_path, "rb") as fh:
+            # Media-sending methods default to a 20s write_timeout that ignores
+            # the request-level value set on the Application; separated stems can
+            # be several MB, so give the upload the same generous window.
             await message.reply_audio(
                 fh,
                 title=display_title,
                 performer=artist or None,
                 filename=filename,
+                write_timeout=300,
+                read_timeout=300,
+                connect_timeout=30,
+                pool_timeout=30,
             )
     await status.delete()
 

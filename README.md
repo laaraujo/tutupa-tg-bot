@@ -1,12 +1,15 @@
 # tutupa-tg-bot
 
 A Telegram bot that splits audio into stems using the fine-tuned
-[Demucs](https://github.com/facebookresearch/demucs) model (`htdemucs_ft`). For
-each track it returns three MP3 files:
+[Demucs](https://github.com/facebookresearch/demucs) model (`htdemucs_ft`). Send
+it a track and it lets you pick which of these outputs you want (any
+combination), then returns each as a 320 kbps MP3:
 
-- **drums** (the isolated percussion)
-- **everything else** (the mix with drums removed)
+- **Just drums** (the isolated percussion)
+- **No drums** (the mix with drums removed)
 - **drums emphasized** (drums at 100%, everything else at 50%)
+
+Messages are localized in English and Spanish based on your Telegram language.
 
 It runs entirely on your machine. Demucs uses the GPU (RTX 3090) inside a Docker
 container. Because the bot talks to Telegram via outbound long-polling, there is
@@ -25,7 +28,8 @@ no inbound networking to configure (no port forwarding, no tunnels).
 └── src/              # all Python code
     ├── bot.py        # Telegram bot
     ├── separate.py   # Demucs + ffmpeg mixing
-    └── spotify_dl.py # Spotify link -> mp3 via spotDL
+    ├── spotify_dl.py # Spotify link -> mp3 via spotDL
+    └── i18n.py       # user-facing strings (en/es)
 ```
 
 ## How it works
@@ -36,8 +40,9 @@ phone (Telegram) -> Telegram servers <- bot (GPU container) -> Demucs (GPU)
 
 You send the bot an audio file **or a Spotify track link**; it produces an mp3
 (via [spotDL](https://github.com/spotDL/spotify-downloader) for Spotify links,
-which sources the audio from YouTube Music), runs `demucs --two-stems` on the
-GPU, and sends both resulting tracks back.
+which sources the audio from YouTube Music). The bot then shows an inline
+keyboard so you can choose which output(s) you want; once you confirm, it runs
+`demucs --two-stems` on the GPU and sends back each selected track as an MP3.
 
 > Note: downloading from Spotify via third-party tooling is against Spotify's
 > Terms of Service. Use this for personal purposes only.

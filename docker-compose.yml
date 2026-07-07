@@ -10,6 +10,9 @@ services:
     volumes:
       # Persist Demucs model weights between runs (downloaded once).
       - ./cache:/cache
+      # Mount the source so local edits are reflected without a rebuild.
+      # (Restart the container to pick them up: `docker compose restart bot`.)
+      - ./src:/app
     restart: unless-stopped
     deploy:
       resources:

@@ -51,6 +51,10 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+# httpx logs every request at INFO, which floods the logs with the long-polling
+# getUpdates calls. Quiet it (and its transport) so only actual usage shows.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("tutupa-tg-bot")
 
 # Only one separation at a time so concurrent requests don't fight over the GPU.
@@ -75,6 +79,16 @@ pending_jobs: dict[str, dict] = {}
 def _lang(update: Update) -> str:
     user = update.effective_user
     return resolve_lang(user.language_code if user else None)
+
+
+def _who(user) -> str:
+    """Compact identifier for a Telegram user, for usage logs."""
+    if user is None:
+        return "unknown"
+    username = f"@{user.username}" if user.username else None
+    name = user.full_name or None
+    parts = [p for p in (username, name) if p]
+    return " / ".join(parts) if parts else "?"
 
 
 def _tx(lang: str) -> dict:
@@ -187,6 +201,8 @@ async def _separate_and_send(
     artist = tags.get("artist") or hint.get("artist") or ""
     album = tags.get("album") or ""
 
+    logger.info("separated track: %r by %r (album=%r)", song, artist, album)
+
     await status.edit_text(t(lang, "uploading"))
 
     available = {
@@ -232,6 +248,12 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await message.reply_text(t(lang, "too_large"))
         return
 
+    logger.info(
+        "audio request from %s: file=%r size=%s",
+        _who(message.from_user),
+        getattr(audio, "file_name", None) or getattr(audio, "title", None),
+        audio.file_size,
+    )
     token = _new_job(
         {
             "kind": "audio",
@@ -257,6 +279,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await message.reply_text(t(lang, "send_audio_or_link"))
         return
 
+    logger.info("spotify request from %s: url=%s", _who(message.from_user), url)
     token = _new_job({"kind": "spotify", "message": message, "url": url})
     await message.reply_text(
         t(lang, "choose_outputs", **_tx(lang)),
@@ -312,6 +335,15 @@ async def _run_job(job: dict, status, lang: str) -> None:
     """
     message = job["message"]
     selected = job["selected"]
+    source = job["url"] if job["kind"] == "spotify" else "uploaded file"
+    logger.info(
+        "job start: %s kind=%s outputs=%s source=%s",
+        _who(message.from_user),
+        job["kind"],
+        ",".join(sorted(selected)),
+        source,
+    )
+    started = time.monotonic()
     workdir = Path(tempfile.mkdtemp(prefix="tutupa_"))
     try:
         if job["kind"] == "audio":
@@ -341,6 +373,11 @@ async def _run_job(job: dict, status, lang: str) -> None:
             await _separate_and_send(
                 message, status, input_path, workdir, lang, selected
             )
+        logger.info(
+            "job done: %s in %.1fs",
+            _who(message.from_user),
+            time.monotonic() - started,
+        )
     except DownloadError:
         logger.exception("spotDL download failed")
         await status.edit_text(t(lang, "failed_download"))

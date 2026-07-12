@@ -79,6 +79,14 @@ docker compose logs -f      # follow logs
 docker compose down         # stop
 ```
 
+## Error tracking (optional)
+
+The bot can report unhandled errors to [Sentry](https://sentry.io/). It's off by
+default; to enable it, set `SENTRY_DSN` in your `.env` (and optionally
+`SENTRY_ENVIRONMENT`, e.g. `production`). Every `logger.exception(...)` — which
+already wraps download, separation, and unexpected job errors — will be sent as
+a Sentry event. Leave `SENTRY_DSN` empty to disable.
+
 ## Notes / limits
 
 - **File size:** Telegram's Bot API limits bot downloads to ~20 MB and uploads

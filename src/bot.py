@@ -47,6 +47,35 @@ DEVICE = os.environ.get("DEMUCS_DEVICE", "cuda")
 # Telegram bots can download files up to 20 MB via the standard Bot API.
 MAX_INPUT_BYTES = 20 * 1024 * 1024
 
+
+def _init_sentry() -> None:
+    """Enable Sentry error reporting if SENTRY_DSN is set.
+
+    Uses the default logging integration, which turns every ``logger.exception``
+    (and any log at ERROR or above) into a Sentry event, so no other changes
+    are needed in the rest of the code.
+    """
+    dsn = os.environ.get("SENTRY_DSN")
+    if not dsn:
+        return
+    import sentry_sdk
+
+    try:
+        traces_sample_rate = float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0") or 0)
+    except ValueError:
+        traces_sample_rate = 0.0
+
+    sentry_sdk.init(
+        dsn=dsn,
+        environment=os.environ.get("SENTRY_ENVIRONMENT") or None,
+        traces_sample_rate=traces_sample_rate,
+        # Telegram messages can contain personal info; keep PII off by default.
+        send_default_pii=False,
+    )
+
+
+_init_sentry()
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",

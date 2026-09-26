@@ -1,5 +1,8 @@
 demucs
 spotdl
+# Also invoked directly (alternate-source search), and refreshed on every
+# container start by docker-entrypoint.sh.
+yt-dlp
 python-telegram-bot>=21
 python-dotenv
 soundfile

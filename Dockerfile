@@ -23,4 +23,9 @@ RUN pip install -r requirements.txt
 
 COPY src/ ./
 
+# Kept outside /app because docker-compose bind-mounts ./src over it.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "bot.py"]

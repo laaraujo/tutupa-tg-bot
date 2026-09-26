@@ -77,6 +77,16 @@ async def _run(cmd: list[str]) -> tuple[int, str]:
     return proc.returncode, output.decode(errors="replace")
 
 
+def _error_summary(output: str, max_lines: int = 3) -> str:
+    """Condense a failed command's output to its last few meaningful lines.
+
+    spotDL reports the real cause (e.g. ``AudioProviderError: YT-DLP download
+    error``) at the end of an otherwise noisy, progress-bar-heavy stdout.
+    """
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    return " | ".join(lines[-max_lines:]) if lines else "(no output)"
+
+
 def _first_mp3(out_dir: Path) -> str | None:
     mp3s = sorted(out_dir.glob("*.mp3"))
     return str(mp3s[0]) if mp3s else None
@@ -154,8 +164,8 @@ async def download_track(
         if mp3:
             return mp3
         logger.warning(
-            "spotDL attempt %d/%d failed for %s; retrying",
-            attempt, MAX_ATTEMPTS, url,
+            "spotDL attempt %d/%d failed for %s: %s",
+            attempt, MAX_ATTEMPTS, url, _error_summary(last_output),
         )
 
     # Fallback: the matched source may be age-restricted/unavailable. Look for
@@ -176,6 +186,9 @@ async def download_track(
         mp3 = _first_mp3(out_dir)
         if mp3:
             return mp3
+        logger.warning(
+            "Alternative source %s failed: %s", yt_url, _error_summary(last_output)
+        )
 
     raise DownloadError(
         f"spotdl failed after {MAX_ATTEMPTS} attempts"

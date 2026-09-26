@@ -87,6 +87,22 @@ default; to enable it, set `SENTRY_DSN` in your `.env` (and optionally
 already wraps download, separation, and unexpected job errors — will be sent as
 a Sentry event. Leave `SENTRY_DSN` empty to disable.
 
+## Troubleshooting: Spotify links suddenly fail to download
+
+YouTube periodically changes its defenses in ways that break older `yt-dlp`
+releases, which shows up as every Spotify link failing (`HTTP Error 403:
+Forbidden` under spotDL's `AudioProviderError`). Because the container is
+long-running, the `yt-dlp` installed at build time goes stale.
+
+The container refreshes `yt-dlp` on every start, so the fix is:
+
+```bash
+docker compose restart bot
+```
+
+Set `YTDLP_AUTO_UPDATE=0` in `.env` to skip that update (e.g. when running
+offline). Uploaded audio files are unaffected — they never touch yt-dlp.
+
 ## Notes / limits
 
 - **File size:** Telegram's Bot API limits bot downloads to ~20 MB and uploads

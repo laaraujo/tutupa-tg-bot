@@ -1,9 +1,11 @@
 🥁 Separá la percusión de cualquier canción.
 
-Enviame un enlace de Spotify o un archivo de audio y te devuelvo tres pistas:
+Enviame un enlace de Spotify o un archivo de audio y te devuelvo las pistas que elijas:
 • 🥁 Solo la batería
 • 🎶 Todo lo demás (la mezcla sin batería)
 • 🔊 Batería resaltada (batería al 100% de volumen, el resto al 50%)
+
+Opcionalmente, agregá un compás de conteo de metrónomo a cualquiera (elegís el BPM, los tiempos por compás y en qué tiempo entra).
 
 Ideal para practicar, hacer covers, sacar canciones de oído o crear bases.
 

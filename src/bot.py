@@ -18,6 +18,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -31,7 +32,9 @@ from separate import (
     FMT,
     STEM,
     SeparationError,
+    detect_leading_silence,
     mix_emphasis,
+    prepend_count_in,
     probe_tags,
     separate,
     transcode_mp3,
@@ -98,11 +101,24 @@ OUTPUT_TITLES = {
     "emphasis": "title_emphasis",
 }
 
+# Count-in answers. A bar can be anything from a single beat up to a long
+# compound meter; BPM stays inside the range a metronome is actually used for.
+BPM_MIN, BPM_MAX = 40, 300
+BEATS_MIN, BEATS_MAX = 1, 16
+_BPM_RE = re.compile(r"\s*(\d+(?:[.,]\d+)?)\s*(?:bpm)?\s*\Z", re.IGNORECASE)
+_BEATS_RE = re.compile(
+    r"\s*(\d+)\s*(?:beats?|tiempos?)?\s*\Z", re.IGNORECASE
+)
+
 # Pending requests awaiting an output selection, keyed by a short token embedded
 # in the inline-keyboard callback data. Telegram limits callback_data to 64
 # bytes, so we can't stash the whole request there.
 _PENDING_TTL = 3600  # seconds; drop selections the user never confirmed
 pending_jobs: dict[str, dict] = {}
+
+# Jobs where the user asked for a count-in, waiting on BPM then beats-per-bar.
+# Keyed by Telegram user id because the answer arrives as a plain text message.
+awaiting_count: dict[int, dict] = {}
 
 
 def _lang(update: Update) -> str:
@@ -166,8 +182,50 @@ def _build_keyboard(token: str, lang: str, selected: set[str]) -> InlineKeyboard
     return InlineKeyboardMarkup(rows)
 
 
+def _count_keyboard(token: str, lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    t(lang, "btn_yes"), callback_data=f"s|{token}|c|y"
+                ),
+                InlineKeyboardButton(
+                    t(lang, "btn_no"), callback_data=f"s|{token}|c|n"
+                ),
+            ]
+        ]
+    )
+
+
+def _parse_bpm(text: str) -> float | None:
+    match = _BPM_RE.fullmatch(text or "")
+    if not match:
+        return None
+    value = float(match.group(1).replace(",", "."))
+    if value < BPM_MIN or value > BPM_MAX:
+        return None
+    return value
+
+
+def _parse_beats(text: str) -> int | None:
+    match = _BEATS_RE.fullmatch(text or "")
+    if not match:
+        return None
+    value = int(match.group(1))
+    if value < BEATS_MIN or value > BEATS_MAX:
+        return None
+    return value
+
+
+def _clear_awaiting(user_id: int | None) -> None:
+    if user_id is not None:
+        awaiting_count.pop(user_id, None)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lang = _lang(update)
+    user = update.effective_user
+    _clear_awaiting(user.id if user else None)
     stem = stem_label(lang, STEM)
     await update.message.reply_text(
         t(lang, "help", stem=stem, stem_cap=stem.capitalize())
@@ -186,6 +244,15 @@ def _pick_audio(message):
     return None
 
 
+async def _set_status(status, text: str) -> None:
+    """Update the progress message. A repeat of the same text is not an error."""
+    try:
+        await status.edit_text(text)
+    except BadRequest as exc:
+        if "message is not modified" not in str(exc).lower():
+            raise
+
+
 def _safe_filename(parts: list[str], ext: str) -> str:
     """Build a filesystem/Telegram-safe filename from non-empty parts."""
     base = " - ".join(p for p in parts if p)
@@ -201,16 +268,17 @@ async def _separate_and_send(
     lang: str,
     selected: set[str],
     meta_hint: dict | None = None,
+    count: dict | None = None,
 ) -> None:
     """Separate ``input_path`` and reply with the ``selected`` tracks as MP3s."""
     stem = stem_label(lang, STEM)
     tx = {"stem": stem, "stem_cap": stem.capitalize()}
 
     if job_lock.locked():
-        await status.edit_text(t(lang, "queued"))
+        await _set_status(status, t(lang, "queued"))
 
     async with job_lock:
-        await status.edit_text(t(lang, "separating", **tx))
+        await _set_status(status, t(lang, "separating", **tx))
         # demucs two-stem mode produces both stems in one run, so we always
         # separate; only the emphasis mix is extra work we can skip.
         stem_path, other_path = await separate(
@@ -232,14 +300,32 @@ async def _separate_and_send(
 
     logger.info("separated track: %r by %r (album=%r)", song, artist, album)
 
-    await status.edit_text(t(lang, "uploading"))
-
     available = {
         "isolated": (stem_path, t(lang, "title_isolated", **tx)),
         "everything": (other_path, t(lang, "title_everything", **tx)),
         "emphasis": (emphasis_path, t(lang, "title_emphasis", **tx)),
     }
     outputs = [available[key] for key in OUTPUT_KEYS if key in selected]
+    if count:
+        await _set_status(status, t(lang, "adding_count"))
+        leading_silence = await detect_leading_silence(input_path)
+        logger.info("count-in source leading silence: %.3fs", leading_silence)
+        suffix = t(lang, "count_suffix")
+        counted = []
+        for index, (path, kind) in enumerate(outputs):
+            count_path = str(workdir / f"count_{index}.{FMT}")
+            await prepend_count_in(
+                path,
+                count_path,
+                count["bpm"],
+                count["beats"],
+                leading_silence=leading_silence,
+                start_beat=count["start_beat"],
+            )
+            counted.append((count_path, f"{kind} {suffix}"))
+        outputs = counted
+
+    await _set_status(status, t(lang, "uploading"))
     for index, (path, kind) in enumerate(outputs):
         display_title = f"{song} - {kind}"
         mp3_path = str(workdir / f"out_{index}.mp3")
@@ -283,6 +369,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         getattr(audio, "file_name", None) or getattr(audio, "title", None),
         audio.file_size,
     )
+    _clear_awaiting(message.from_user.id if message.from_user else None)
     token = _new_job(
         {
             "kind": "audio",
@@ -300,9 +387,80 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
+def _parse_start_beat(text: str, beats: int) -> int | None:
+    match = _BEATS_RE.fullmatch(text or "")
+    if not match:
+        return None
+    value = int(match.group(1))
+    if value < 1 or value > beats:
+        return None
+    return value
+
+
+async def _handle_count_reply(message, user_id: int, pending: dict) -> None:
+    """Collect BPM, beats per bar, and which beat the song starts on."""
+    lang = pending["lang"]
+    if pending["stage"] == "bpm":
+        bpm = _parse_bpm(message.text or "")
+        if bpm is None:
+            await message.reply_text(t(lang, "ask_bpm_invalid"))
+            return
+        pending["bpm"] = bpm
+        pending["stage"] = "beats"
+        await message.reply_text(t(lang, "ask_beats"))
+        return
+
+    if pending["stage"] == "beats":
+        beats = _parse_beats(message.text or "")
+        if beats is None:
+            await message.reply_text(t(lang, "ask_beats_invalid"))
+            return
+        pending["beats"] = beats
+        pending["stage"] = "start"
+        await message.reply_text(t(lang, "ask_start"))
+        return
+
+    start_beat = _parse_start_beat(message.text or "", pending["beats"])
+    if start_beat is None:
+        await message.reply_text(
+            t(lang, "ask_start_invalid", beats=pending["beats"])
+        )
+        return
+    awaiting_count.pop(user_id, None)
+    job = pending["job"]
+    job["count"] = {
+        "bpm": pending["bpm"],
+        "beats": pending["beats"],
+        "start_beat": start_beat,
+    }
+    logger.info(
+        "count-in for %s: bpm=%s beats=%s start_beat=%s",
+        _who(message.from_user), pending["bpm"], pending["beats"], start_beat,
+    )
+    # Fresh message under the user's answer. The BPM prompt is already several
+    # messages up, so editing that one never shows up as a new status.
+    start_key = "downloading" if job["kind"] == "audio" else "fetching_spotify"
+    status = await message.reply_text(t(lang, start_key))
+    await _run_job(job, status, lang)
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     lang = _lang(update)
+    user_id = message.from_user.id if message.from_user else None
+    pending = awaiting_count.get(user_id) if user_id is not None else None
+    if pending is not None:
+        if time.monotonic() - pending["created"] > _PENDING_TTL:
+            awaiting_count.pop(user_id, None)
+            if find_track_url(message.text) is None:
+                await message.reply_text(t(lang, "request_expired"))
+                return
+        elif find_track_url(message.text) is None:
+            await _handle_count_reply(message, user_id, pending)
+            return
+        else:
+            awaiting_count.pop(user_id, None)
+
     url = find_track_url(message.text)
     if url is None:
         await message.reply_text(t(lang, "send_audio_or_link"))
@@ -351,8 +509,24 @@ async def handle_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         if not job["selected"]:
             await query.answer(t(lang, "select_at_least_one"), show_alert=True)
             return
+        await query.answer()
+        await query.edit_message_text(
+            t(lang, "ask_count"), reply_markup=_count_keyboard(token, lang)
+        )
+        return
+
+    if action == "c":
         pending_jobs.pop(token, None)
         await query.answer()
+        if len(parts) > 3 and parts[3] == "y":
+            awaiting_count[query.from_user.id] = {
+                "job": job,
+                "lang": lang,
+                "stage": "bpm",
+                "created": time.monotonic(),
+            }
+            await query.edit_message_text(t(lang, "ask_bpm"))
+            return
         await query.edit_message_reply_markup(reply_markup=None)
         await _run_job(job, query.message, lang)
 
@@ -377,7 +551,7 @@ async def _run_job(job: dict, status, lang: str) -> None:
     try:
         if job["kind"] == "audio":
             audio = job["audio"]
-            await status.edit_text(t(lang, "downloading"))
+            await _set_status(status, t(lang, "downloading"))
             tg_file = await audio.get_file()
             filename = (
                 getattr(audio, "file_name", None)
@@ -387,20 +561,21 @@ async def _run_job(job: dict, status, lang: str) -> None:
             await tg_file.download_to_drive(custom_path=str(input_path))
             await _separate_and_send(
                 message, status, str(input_path), workdir, lang, selected,
-                job.get("meta_hint"),
+                job.get("meta_hint"), job.get("count"),
             )
         else:
-            await status.edit_text(t(lang, "fetching_spotify"))
+            await _set_status(status, t(lang, "fetching_spotify"))
 
             async def _searching_alternative() -> None:
-                await status.edit_text(t(lang, "searching_alternative"))
+                await _set_status(status, t(lang, "searching_alternative"))
 
             input_path = await download_track(
                 job["url"], str(workdir / "dl"),
                 on_fallback=_searching_alternative,
             )
             await _separate_and_send(
-                message, status, input_path, workdir, lang, selected
+                message, status, input_path, workdir, lang, selected,
+                count=job.get("count"),
             )
         logger.info(
             "job done: %s in %.1fs",
@@ -409,14 +584,14 @@ async def _run_job(job: dict, status, lang: str) -> None:
         )
     except DownloadError:
         logger.exception("spotDL download failed")
-        await status.edit_text(t(lang, "failed_download"))
+        await _set_status(status, t(lang, "failed_download"))
     except SeparationError:
         logger.exception("Demucs separation failed")
-        await status.edit_text(t(lang, "failed_separation"))
+        await _set_status(status, t(lang, "failed_separation"))
     except Exception:  # noqa: BLE001 - surface unexpected errors to the user
         logger.exception("Unexpected error while running job")
         try:
-            await status.edit_text(t(lang, "error"))
+            await _set_status(status, t(lang, "error"))
         except Exception:
             pass
     finally:

@@ -22,6 +22,7 @@ _MESSAGES = {
             "\u2022 Just {stem}\n"
             "\u2022 No {stem}\n"
             "\u2022 {stem} emphasized\n\n"
+            "Any of them can start with a one-bar metronome count-in.\n\n"
             "Uploaded files must be under 20 MB; Spotify links have no such limit."
         ),
         "es": (
@@ -32,6 +33,7 @@ _MESSAGES = {
             "\u2022 Solo{stem}\n"
             "\u2022 Sin {stem}\n"
             "\u2022 {stem} resaltada\n\n"
+            "Cualquiera puede empezar con un compás de conteo de metrónomo.\n\n"
             "Los archivos subidos deben pesar menos de 20 MB; los enlaces de "
             "Spotify no tienen ese límite."
         ),
@@ -139,6 +141,56 @@ _MESSAGES = {
     "title_emphasis": {
         "en": "{stem_cap} emphasized",
         "es": "{stem_cap} resaltada",
+    },
+    "count_suffix": {
+        "en": "+ count",
+        "es": "+ conteo",
+    },
+    "ask_count": {
+        "en": "Add a one-bar metronome count-in at the start of the track(s)?",
+        "es": "¿Agregar un compás de conteo de metrónomo al inicio de la(s) pista(s)?",
+    },
+    "btn_yes": {
+        "en": "Yes",
+        "es": "Sí",
+    },
+    "btn_no": {
+        "en": "No",
+        "es": "No",
+    },
+    "ask_bpm": {
+        "en": "What BPM is the song? Send a number, for example 120.",
+        "es": "¿A qué BPM está la canción? Enviá un número, por ejemplo 120.",
+    },
+    "ask_bpm_invalid": {
+        "en": "Send a BPM between 40 and 300, for example 120.",
+        "es": "Enviá un BPM entre 40 y 300, por ejemplo 120.",
+    },
+    "ask_beats": {
+        "en": "How many beats are in each bar? For example 4.",
+        "es": "¿Cuántos tiempos tiene cada compás? Por ejemplo 4.",
+    },
+    "ask_beats_invalid": {
+        "en": "Send a whole number of beats per bar, from 1 to 16.",
+        "es": "Enviá un número entero de tiempos por compás, entre 1 y 16.",
+    },
+    "ask_start": {
+        "en": (
+            "On which beat does the song start? Send 1 if it starts on the "
+            "downbeat, or 3 if it comes in on beat 3."
+        ),
+        "es": (
+            "¿En qué tiempo entra la canción? Enviá 1 si entra en el primer "
+            "tiempo, o 3 si entra en el 3."
+        ),
+    },
+    "ask_start_invalid": {
+        "en": "Send a beat from 1 to {beats}.",
+        "es": "Enviá un tiempo del 1 al {beats}.",
+    },
+    "adding_count": {
+        "en": "Adding the count-in...",
+        "es": "Agregando el conteo...",
     },
 }
 

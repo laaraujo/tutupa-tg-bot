@@ -9,6 +9,10 @@ combination), then returns each as a 320 kbps MP3:
 - **No drums** (the mix with drums removed)
 - **drums emphasized** (drums at 100%, everything else at 50%)
 
+After you pick, the bot asks whether to add a **count-in**: one bar of
+metronome clicks prepended to every selected track. If you say yes, it asks for
+the BPM, the number of beats per bar, and which beat the song starts on.
+
 Messages are localized in English and Spanish based on your Telegram language.
 
 It runs entirely on your machine. Demucs uses the GPU (RTX 3090) inside a Docker
